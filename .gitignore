@@ -1,3 +1,32 @@
 /.vscode
 /__pycache__
 *.pyc
+
+# uv / virtual environment
+.venv/
+
+
+
+# Secrets (HuggingFace token, etc.)
+.env
+
+# micromamba (local conda distribution + envs) for the legacy "before" stack
+/.micromamba/
+/bin/micromamba
+
+# Datasets and samples (fetched via scripts/prepare_sample.py)
+/data/
+# Full-dataset clones referenced by the original README
+/e-SNLI/
+/SemEval2020-Task4-Commonsense-Validation-and-Explanation/
+/cot-unfaithfulness/
+
+# Local HuggingFace cache
+/.hf_cache/
+
+# Results written by faithfulness.py
+/results_json/
+/results_cluster/
+
+# Before/after regression harness outputs
+/regression_results/

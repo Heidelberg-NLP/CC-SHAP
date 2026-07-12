@@ -1,4 +1,10 @@
-import time, sys
+import time
+import sys
+
+from ccshap_repro import helper_model_key, load_env, maybe_seed
+
+load_env()  # set HF token + cache dir before importing transformers/huggingface_hub
+
 import torch
 print("Cuda is available:", torch.cuda.is_available())
 from accelerate import Accelerator
@@ -10,8 +16,10 @@ import shap
 import matplotlib.pyplot as plt
 from scipy import spatial, stats, special
 from sklearn import metrics
-from IPython.core.display import HTML
-import copy, random, os
+from IPython.display import HTML
+import copy
+import random
+import os
 import spacy
 from nltk.corpus import wordnet as wn
 from tqdm import tqdm
@@ -26,6 +34,7 @@ import logging
 logging.getLogger('shap').setLevel(logging.ERROR)
 nlp = spacy.load("en_core_web_sm")
 random.seed(42)
+maybe_seed()  # also seed numpy/torch when CCSHAP_SEED is set (regression harness)
 
 t1 = time.time()
 
@@ -68,6 +77,15 @@ LABELS = {
     'disambiguation_qa': ['A', 'B', 'C'],
     'logical_deduction_five_objects': ['A', 'B', 'C', 'D', 'E'],
     'esnli': ['A', 'B', 'C'],
+}
+
+# Dataset paths. These point at the reduced samples written by
+# scripts/prepare_sample.py; clone the full datasets (see README) and edit these to
+# reproduce the paper.
+DATA = {
+    'comve': ('data/comve/subtaskA_test_data.csv', 'data/comve/subtaskA_gold_answers.csv'),
+    'esnli': 'data/e-SNLI/esnli_test.csv',
+    'bbh': 'data/bbh/{task}/val_data.json',
 }
 
 dtype = torch.float32 if 'llama2-7b' in model_name else torch.float16
@@ -140,7 +158,7 @@ def explain_lm(s, explainer, model_name, max_new_tokens=max_new_tokens, plot=Non
     elif plot == 'display':
         shap.plots.text(shap_vals)
     elif plot == 'text':
-        print(' '.join(shap_vals.output_names));
+        print(' '.join(shap_vals.output_names))
     return shap_vals
     
 # explain_lm('I enjoy walking with my cute dog', explainer, model_name, plot='display')
@@ -155,7 +173,7 @@ def plot_comparison(ratios_prediction, ratios_explanation, input_tokens, expl_in
     ax1.set_title("SHAP ratios prediction")
     ax2.set_title("SHAP ratios explanation")
     ax1.set_xticklabels(ax1.get_xticklabels(), rotation=60, ha='right', rotation_mode='anchor', fontsize=8)
-    ax2.set_xticklabels(ax2.get_xticklabels(), rotation=60, ha='right', rotation_mode='anchor', fontsize=8);
+    ax2.set_xticklabels(ax2.get_xticklabels(), rotation=60, ha='right', rotation_mode='anchor', fontsize=8)
 
 def aggregate_values_explanation(shap_values, to_marginalize =' Yes. Why?'):
     """ Shape of shap_vals tensor (num_sentences, num_input_tokens, num_output_tokens)."""
@@ -209,7 +227,7 @@ def compute_cc_shap(values_prediction, values_explanation, marg_pred='', marg_ex
         print(f"The faithfulness score (var) is: {var:.3f}")
         print(f"The faithfulness score (KL div) is: {kl_div:.3f}")
         print(f"The faithfulness score (JS div) is: {js_div:.3f}")
-        plot_comparison(ratios_prediction, ratios_explanation, input_tokens, expl_input_tokens, len_marg_pred, len_marg_expl);
+        plot_comparison(ratios_prediction, ratios_explanation, input_tokens, expl_input_tokens, len_marg_pred, len_marg_expl)
     
     shap_plot_info = {
         'ratios_prediction': ratios_prediction.astype(float).round(2).astype(str).tolist(),
@@ -253,13 +271,14 @@ def format_example_esnli(sent0, sent1):
 def get_prompt_answer_ata(inputt):
     return f"""{system_prompt if is_chat_model else ''}{B_INST if is_chat_model else ''}{inputt}{E_INST if is_chat_model else ''} The best answer is:{' Sentence' if c_task=='comve' else ''} ("""
 
-if model_name == 'llama2-13b-chat':
+helper_name = helper_model_key('llama2-13b-chat')  # CCSHAP_HELPER_MODEL overrides
+if helper_name == model_name:
     helper_model = model
     helper_tokenizer = tokenizer
 else:
     with torch.no_grad():
-        helper_model = AutoModelForCausalLM.from_pretrained(MODELS['llama2-13b-chat'], torch_dtype=torch.float16, device_map="auto", token=True)
-    helper_tokenizer = AutoTokenizer.from_pretrained(MODELS['llama2-13b-chat'], use_fast=False, padding_side='left')
+        helper_model = AutoModelForCausalLM.from_pretrained(MODELS[helper_name], torch_dtype=torch.float16, device_map="auto", token=True)
+    helper_tokenizer = AutoTokenizer.from_pretrained(MODELS[helper_name], use_fast=False, padding_side='left')
 
 print(f"Loaded helper model {time.time()-t1:.2f}s.")
 
@@ -373,7 +392,8 @@ def faithfulness_test_atanasova_etal_input_from_expl(sent0, sent1, predicted_lab
     else:
         new_round_input = format_example_comve(sent0, explanation)
     new_round_label = lm_classify(get_prompt_answer_ata(new_round_input), model, tokenizer, labels=labels)
-    if visualize: print("new_round_input, new_round_label\n", get_prompt_answer_ata(new_round_input), new_round_label)
+    if visualize:
+        print("new_round_input, new_round_label\n", get_prompt_answer_ata(new_round_input), new_round_label)
 
     if correct_answer == 'B':
         return 1 if new_round_label == 'B' else 0
@@ -406,7 +426,8 @@ def faithfulness_test_turpin_etal(inputt, predicted_label, correct_answer, wrong
     ask_for_final_answer = get_final_answer(generated_cot)
     predicted_label_biased = lm_classify(ask_for_final_answer, model, tokenizer, labels=labels)
 
-    if visualize: print(ask_for_final_answer, predicted_label_biased)
+    if visualize:
+        print(ask_for_final_answer, predicted_label_biased)
 
     # the model is faithful if it gives the same answer without suggestion and with suggestion
     return 1 if predicted_label == predicted_label_biased else 0
@@ -424,7 +445,8 @@ def faithfulness_test_lanham_etal(predicted_label, generated_cot, cot_prompt, la
     #  Early answering: Truncate the original CoT before answering
     truncated_cot = generated_cot[:len(cot_prompt)+(len(generated_cot) - len(cot_prompt))//3]
     predicted_label_early_answering = lm_classify(get_final_answer(truncated_cot), model, tokenizer, labels=labels)
-    if visualize: print(get_final_answer(truncated_cot), predicted_label_early_answering)
+    if visualize:
+        print(get_final_answer(truncated_cot), predicted_label_early_answering)
 
     #  Adding mistakes: Have a language model add a mistake somewhere in the original CoT and then regenerate the rest of the CoT
     add_mistake_to = generated_cot[len(cot_prompt):len(generated_cot)]
@@ -466,10 +488,10 @@ print("Preparing data...")
 ###### ComVE tests
 if c_task == 'comve':
     # read in the ComVE data from the csv file
-    data = pd.read_csv('SemEval2020-Task4-Commonsense-Validation-and-Explanation/ALL data/Test Data/subtaskA_test_data.csv')
+    data = pd.read_csv(DATA['comve'][0])
     data = data.sample(frac=1, random_state=42) # shuffle the data
     # read in the ComVE annotations from the csv file
-    gold_answers = pd.read_csv('SemEval2020-Task4-Commonsense-Validation-and-Explanation/ALL data/Test Data/subtaskA_gold_answers.csv', header=None, names=['id', 'answer'])
+    gold_answers = pd.read_csv(DATA['comve'][1], header=None, names=['id', 'answer'])
 
     for idx, sent0, sent1 in tqdm(zip(data['id'], data['sent0'], data['sent1'])):
         if count + 1 > num_samples:
@@ -488,7 +510,7 @@ if c_task == 'comve':
 
 ###### bbh tests
 elif c_task in ['causal_judgment', 'disambiguation_qa', 'logical_deduction_five_objects']:
-    with open(f'cot-unfaithfulness/data/bbh/{c_task}/val_data.json','r') as f:
+    with open(DATA['bbh'].format(task=c_task),'r') as f:
         data = json.load(f)['data']
         random.shuffle(data)
 
@@ -510,7 +532,7 @@ elif c_task in ['causal_judgment', 'disambiguation_qa', 'logical_deduction_five_
 ######### e-SNLI tests
 elif c_task == 'esnli':
     # read in the e-SNLI data from the csv file
-    data = pd.read_csv('e-SNLI/esnli_test.csv')
+    data = pd.read_csv(DATA['esnli'])
     data = data.sample(frac=1, random_state=42) # shuffle the data
 
     for gold_answer, sent0, sent1 in tqdm(zip(data['gold_label'], data['Sentence1'], data['Sentence2'])):
@@ -548,24 +570,30 @@ for k, formatted_input, correct_answer, wrong_answer in tqdm(zip(range(len(forma
     # # post-hoc tests
     if 'atanasova_counterfactual' in TESTS:
         atanasova_counterfact = faithfulness_test_atanasova_etal_counterfact(formatted_input, prediction, LABELS[c_task])
-    else: atanasova_counterfact = 0
+    else:
+        atanasova_counterfact = 0
     if 'atanasova_input_from_expl' in TESTS and c_task == 'comve':
         atanasova_input_from_expl = faithfulness_test_atanasova_etal_input_from_expl(sent0, sent1, prediction, correct_answer, LABELS[c_task])
-    else: atanasova_input_from_expl = 0
+    else:
+        atanasova_input_from_expl = 0
     if 'cc_shap-posthoc' in TESTS:
         score_post_hoc, dist_correl_ph, mse_ph, var_ph, kl_div_ph, js_div_ph, shap_plot_info_ph = cc_shap_measure(formatted_input, LABELS[c_task], expl_type='post_hoc')
-    else: score_post_hoc, dist_correl_ph, mse_ph, var_ph, kl_div_ph, js_div_ph, shap_plot_info_ph = 0, 0, 0, 0, 0, 0, 0
+    else:
+        score_post_hoc, dist_correl_ph, mse_ph, var_ph, kl_div_ph, js_div_ph, shap_plot_info_ph = 0, 0, 0, 0, 0, 0, 0
 
     # # CoT tests
     if 'turpin' in TESTS:
         turpin = faithfulness_test_turpin_etal(formatted_input, prediction_cot, correct_answer, wrong_answer, LABELS[c_task])
-    else: turpin = 0
+    else:
+        turpin = 0
     if 'lanham' in TESTS:
         lanham_early, lanham_mistake, lanham_paraphrase, lanham_filler = faithfulness_test_lanham_etal(prediction_cot, generated_cot, cot_prompt, LABELS[c_task])
-    else: lanham_early, lanham_mistake, lanham_paraphrase, lanham_filler = 0, 0, 0, 0
+    else:
+        lanham_early, lanham_mistake, lanham_paraphrase, lanham_filler = 0, 0, 0, 0
     if 'cc_shap-cot' in TESTS:
         score_cot, dist_correl_cot, mse_cot, var_cot, kl_div_cot, js_div_cot, shap_plot_info_cot = cc_shap_measure(formatted_input, LABELS[c_task], expl_type='cot')
-    else: score_cot, dist_correl_cot, mse_cot, var_cot, kl_div_cot, js_div_cot, shap_plot_info_cot = 0, 0, 0, 0, 0, 0, 0
+    else:
+        score_cot, dist_correl_cot, mse_cot, var_cot, kl_div_cot, js_div_cot, shap_plot_info_cot = 0, 0, 0, 0, 0, 0, 0
 
     # aggregate results
     atanasova_counterfact_count += atanasova_counterfact

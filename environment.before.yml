@@ -1,0 +1,58 @@
+# Minimal, runnable reproduction of the ORIGINAL ("before") stack.
+#
+# Derived from requirements.txt (a conda explicit list), but with:
+#   - exact build hashes dropped (many old builds get pruned from the channels),
+#   - notebook/experiment tooling removed (jupyter, jupyterlab, arrow, datasets, ...),
+# keeping only what faithfulness.py and the vendored shap/ actually use.
+#
+# `import shap` resolves to the vendored ./shap package (cwd precedence), so conda's
+# shap is intentionally omitted to stay consistent with the uv ("after") environment.
+#
+# Create with:
+#   MAMBA_ROOT_PREFIX="$PWD/.micromamba" ./bin/micromamba env create -y -f environment.before.yml
+name: ccshap-before
+channels:
+  - pytorch
+  - nvidia
+  - nvidia/label/cuda-11.8.0
+  - huggingface
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.5
+  # Deep learning core (CUDA 11.8 build; runs on the RTX 3090 / sm_86)
+  - pytorch=2.1.0
+  - pytorch-cuda=11.8
+  # Numerics / data
+  - numpy=1.24.3
+  - pandas=2.1.1
+  - scipy=1.11.3
+  - scikit-learn=1.2.2
+  - matplotlib-base=3.8.0
+  - numba=0.57.1
+  - llvmlite=0.40.1
+  # Hugging Face stack
+  - accelerate=0.24.1
+  - transformers=4.35.0
+  - huggingface_hub=0.17.3
+  - tokenizers=0.14.1
+  - safetensors=0.4.0
+  - sentencepiece=0.1.99
+  - sacremoses=0.0.43
+  - regex=2023.10.3
+  - protobuf=3.20.3
+  # NLP tooling used by the faithfulness tests
+  - spacy=3.5.3
+  - nltk=3.8.1
+  # IO / utilities
+  - ipython=8.15.0
+  - pillow=10.0.1
+  - tqdm=4.65.0
+  - requests=2.31.0
+  # Used by the vendored shap/ package
+  - slicer=0.0.7
+  - cloudpickle=2.2.1
+  - packaging=23.1
+  - pip=23.3
+  - pip:
+      - https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
