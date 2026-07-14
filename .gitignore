@@ -6,13 +6,8 @@
 .venv/
 
 
-
 # Secrets (HuggingFace token, etc.)
 .env
-
-# micromamba (local conda distribution + envs) for the legacy "before" stack
-/.micromamba/
-/bin/micromamba
 
 # Datasets and samples (fetched via scripts/prepare_sample.py)
 /data/
@@ -28,5 +23,5 @@
 /results_json/
 /results_cluster/
 
-# Before/after regression harness outputs
+
 /regression_results/

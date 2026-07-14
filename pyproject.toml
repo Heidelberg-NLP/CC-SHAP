@@ -42,7 +42,7 @@ dependencies = [
 package = false
 
 [tool.ruff.lint.per-file-ignores]
-# faithfulness.py must call ccshap_repro.load_env() before importing transformers so the
+# faithfulness.py must call hf_env.load_env() before importing transformers so the
 # HF token/cache env vars take effect, which necessarily puts imports after a statement.
 "faithfulness.py" = ["E402"]
 

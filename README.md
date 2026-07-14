@@ -10,9 +10,7 @@ Turpin et al. biasing, Lanham et al. CoT corruptions) over three datasets.
 
 ## Setup
 
-This repo has been modernized to run on a current Python 3.11 stack managed with
-[uv](https://docs.astral.sh/uv/), while keeping a reproduction of the original stack for
-regression testing (see [Before/after regression](#beforeafter-regression)).
+Dependencies are managed with [uv](https://docs.astral.sh/uv/) (Python 3.11):
 
 ```bash
 uv sync                                     # create .venv from pyproject.toml
@@ -20,16 +18,16 @@ uv pip install "https://github.com/explosion/spacy-models/releases/download/en_c
 uv run python -c "import nltk; nltk.download('wordnet'); nltk.download('omw-1.4')"
 ```
 
-Create a `.env` in the repo root (it is gitignored) for HuggingFace access and cache
-location:
+For HuggingFace access and a custom cache location, copy `.env.example` to `.env`
+(gitignored) and fill it in:
 
 ```dotenv
 HF_TOKEN=hf_...                             # required for gated models (Llama-2, ...)
 HF_CACHE=/path/with/space/for/model/weights # sets HF_HOME so weights don't fill $HOME
 ```
 
-`.env` is loaded automatically by `faithfulness.py` (via `ccshap_repro.load_env`) before
-any HuggingFace import, so the token and cache directory take effect.
+`.env` is loaded automatically by `faithfulness.py` (via `hf_env.load_env`) before any
+HuggingFace import, so the token and cache directory take effect.
 
 ## Models
 
@@ -38,20 +36,20 @@ the HuggingFace Hub on first use. The keys map to Hub ids in the `MODELS` dict.
 
 | `model` arg | Hub id | Notes |
 | --- | --- | --- |
-| `gpt2` | `gpt2` | tiny, ungated — used for smoke tests and the regression harness |
+| `gpt2` | `gpt2` | tiny, ungated — used for smoke tests |
 | `mistral-7b` / `mistral-7b-chat` | `mistralai/Mistral-7B-v0.1` / `-Instruct-v0.1` | ungated, fits one RTX 3090 in fp16 |
 | `falcon-7b` / `falcon-7b-chat` | `tiiuae/falcon-7b` / `-instruct` | ungated |
 | `llama2-7b` / `-13b` (+ `-chat`) | `meta-llama/Llama-2-*` | **gated** — needs `HF_TOKEN` |
 | `bloom-7b1`, `opt-30b`, `falcon-40b`, ... | see `MODELS` | 30B/40B need >48 GB (multi-GPU / offload) |
 
 The Lanham test paraphrases / edits the CoT with a **helper model** (the paper uses
-`llama2-13b-chat`). Override it with `CCSHAP_HELPER_MODEL=<key>`; the regression harness
-sets it to the run's own model so the smoke test stays small and token-free.
+`llama2-13b-chat`). Override it with `--helper-model <key>`, e.g. set it to the run's own
+model to keep a smoke test small and token-free.
 
 ## Datasets
 
-The paper clones three full repositories. For smoke tests and regression we only need a
-handful of examples, fetched by `scripts/prepare_sample.py` into `data/`:
+The paper clones three full repositories. For smoke tests we only need a handful of
+examples, fetched by `scripts/prepare_sample.py` into `data/`:
 
 ```bash
 uv run python scripts/prepare_sample.py --num 10
@@ -81,29 +79,8 @@ uv run python faithfulness.py esnli mistral-7b-chat 100
 ```
 
 `<task>` is one of `comve`, `esnli`, `causal_judgment`, `disambiguation_qa`,
-`logical_deduction_five_objects`. Results are written to `results_json/`.
-
-## Before/after regression
-
-Two environments run the *same* vendored `shap/` so we can check that the dependency
-upgrade preserves behavior:
-
-- **before**: the original stack (Python 3.11, torch 2.1, transformers 4.35) in a
-  micromamba env, created from `environment.before.yml`.
-- **after**: the modernized uv env (`.venv`).
-
-```bash
-# one-time: create the legacy env
-MAMBA_ROOT_PREFIX="$PWD/.micromamba" ./bin/micromamba env create -y -f environment.before.yml
-
-# record the (slow) before baseline once, then compare the after stack against it
-uv run python scripts/regression_test.py --task comve --model gpt2 --num 2 --env before
-uv run python scripts/regression_test.py --task comve --model gpt2 --num 2
-```
-
-Runs are seeded via `CCSHAP_SEED`, and wall-clock time per stack is logged under
-`regression_results/<stack>/*.time`. `scripts/refactor_check.py` similarly guards code
-refactors against a golden baseline captured in the same env.
+`logical_deduction_five_objects`. Results are written to `results_json/`. Add
+`--helper-model <key>` to change the Lanham helper, or `--no-write` to skip the json.
 
 ## Cite
 ```bibtex

@@ -1,9 +1,7 @@
 """Load the first ``num_samples`` examples of a task into a uniform ``Example`` list.
 
-The ComVE and e-SNLI CSVs are shuffled with a fixed pandas seed; BBH is shuffled with
-the global ``random`` (so it participates in the ``CCSHAP_SEED`` determinism the harness
-relies on). ``wrong_answer`` is drawn with ``random.choice`` for BBH and e-SNLI,
-matching the original script's RNG consumption order.
+The ComVE and e-SNLI CSVs and the BBH rows are shuffled (unseeded, so the sampled subset
+varies run to run); ``wrong_answer`` is drawn with ``random.choice`` for BBH and e-SNLI.
 """
 from __future__ import annotations
 
@@ -40,7 +38,7 @@ def load_examples(task: str, prompts: Prompts, num_samples: int) -> list[Example
 
 
 def _load_comve(prompts: Prompts, num_samples: int) -> list[Example]:
-    data = pd.read_csv(DATA["comve"][0]).sample(frac=1, random_state=42)
+    data = pd.read_csv(DATA["comve"][0]).sample(frac=1)
     gold = pd.read_csv(DATA["comve"][1], header=None, names=["id", "answer"])
 
     examples: list[Example] = []
@@ -70,7 +68,7 @@ def _load_bbh(task: str, num_samples: int) -> list[Example]:
 
 
 def _load_esnli(task: str, prompts: Prompts, num_samples: int) -> list[Example]:
-    data = pd.read_csv(DATA["esnli"]).sample(frac=1, random_state=42)
+    data = pd.read_csv(DATA["esnli"]).sample(frac=1)
 
     examples: list[Example] = []
     for gold_label, sent0, sent1 in zip(data["gold_label"],

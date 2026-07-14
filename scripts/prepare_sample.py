@@ -1,10 +1,10 @@
 """Fetch small, self-contained samples of the CC-SHAP evaluation datasets.
 
 The paper clones three full repositories (e-SNLI, ComVE / SemEval-2020 Task 4, and the
-BBH subsets from cot-unfaithfulness). For smoke tests and the before/after regression
-harness we only need a handful of examples, so this downloads the source files, applies
-the *same* selection faithfulness.py uses (seeded shuffle, first ``--num`` rows), and
-writes reduced files under ``data/`` that the ``DATA`` dict in faithfulness.py reads.
+BBH subsets from cot-unfaithfulness). For smoke tests we only need a handful of
+examples, so this downloads the source files, shuffles and keeps the first ``--num``
+rows, and writes reduced files under ``data/`` that the ``DATA`` dict in
+faithfulness.py reads.
 
 Usage (inside the uv env):
     uv run python scripts/prepare_sample.py --num 10
@@ -21,7 +21,6 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
 DATA = REPO / "data"
-SHUFFLE_SEED = 42
 
 ESNLI_URL = ("https://raw.githubusercontent.com/OanaMariaCamburu/e-SNLI/master/"
              "dataset/esnli_test.csv")
@@ -44,7 +43,7 @@ def _report(path: Path, rows: int) -> None:
 
 def sample_esnli(num: int) -> None:
     data = pd.read_csv(io.BytesIO(_download(ESNLI_URL)))
-    sample = data.sample(frac=1, random_state=SHUFFLE_SEED).head(num)
+    sample = data.sample(frac=1).head(num)
     sample = sample[["gold_label", "Sentence1", "Sentence2"]]
     out = DATA / "e-SNLI" / "esnli_test.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +55,7 @@ def sample_comve(num: int) -> None:
     test = pd.read_csv(io.BytesIO(_download(f"{COMVE_BASE}/subtaskA_test_data.csv")))
     gold = pd.read_csv(io.BytesIO(_download(f"{COMVE_BASE}/subtaskA_gold_answers.csv")),
                        header=None, names=["id", "answer"])
-    sample = test.sample(frac=1, random_state=SHUFFLE_SEED).head(num)
+    sample = test.sample(frac=1).head(num)
     gold_sample = gold[gold["id"].isin(sample["id"])]
 
     out_dir = DATA / "comve"
@@ -69,7 +68,7 @@ def sample_comve(num: int) -> None:
 def sample_bbh(task: str, num: int) -> None:
     payload = json.loads(_download(f"{BBH_BASE}/{task}/val_data.json"))
     rows = payload["data"]
-    random.Random(SHUFFLE_SEED).shuffle(rows)
+    random.shuffle(rows)
     payload["data"] = rows[:num]
 
     out = DATA / "bbh" / task / "val_data.json"
