@@ -227,17 +227,15 @@ class TeacherForcing(Model):
         else:
             output_ids = self.output[0]
 
-        def calc_logodds(arr):
-            probs = np.exp(arr) / np.exp(arr).sum(-1)
-            logodds = sp.special.logit(probs)
-            return logodds
+        # Only the output-token column is kept, so evaluate the softmax + logit at the
+        # output ids only (the denominator still sums over the whole vocab). Bit-for-bit
+        # equal to the previous per-row np.apply_along_axis, which dominated CPU time.
+        seq_idx = np.array(range(logits.shape[1]))
+        exp_logits = np.exp(logits)
+        probs_for_output_ids = exp_logits[:, seq_idx, output_ids] / exp_logits.sum(-1)
+        return sp.special.logit(probs_for_output_ids)
 
-        # pass logits through softmax, get the token corresponding score and convert back to log odds (as one vs all)
-        logodds = np.apply_along_axis(calc_logodds, -1, logits)
-        logodds_for_output_ids = logodds[:, np.array(range(logodds.shape[1])), output_ids]
-        return logodds_for_output_ids
-
-    def model_inference(self, inputs, output_ids):
+    def model_inference(self, inputs, output_ids, logits_slice=None):
         """ This function performs model inference for tensorflow and pytorch models.
 
         Parameters
@@ -247,6 +245,10 @@ class TeacherForcing(Model):
 
         output_ids: numpy.ndarray
             An array of decoder output ids.
+
+        logits_slice: slice, optional
+            Sequence-axis slice applied on-device before the float64 host transfer, so only
+            the positions the caller keeps are moved off the GPU and upcast.
 
         Returns
         -------
@@ -276,7 +278,10 @@ class TeacherForcing(Model):
                         inputs["position_ids"].masked_fill_(inputs["attention_mask"] == 0, 0)
                     # model inference
                     outputs = self.similarity_model(**inputs, return_dict=True)
-                logits = outputs.logits.detach().cpu().numpy().astype('float64')
+                logits = outputs.logits
+                if logits_slice is not None:
+                    logits = logits[:, logits_slice, :]
+                logits = logits.detach().cpu().numpy().astype('float64')
         elif self.similarity_model_type == "tf":
             import tensorflow as tf # pylint: disable=import-outside-toplevel
             output_ids = tf.convert_to_tensor(output_ids, dtype=tf.int32)
@@ -306,7 +311,10 @@ class TeacherForcing(Model):
                             outputs = self.similarity_model(inputs, return_dict=True)
                     except RuntimeError as err:
                         print(err)
-            logits = outputs.logits.numpy().astype('float64')
+            logits = outputs.logits
+            if logits_slice is not None:
+                logits = logits[:, logits_slice, :]
+            logits = logits.numpy().astype('float64')
         return logits
 
     def get_teacher_forced_logits(self, X, Y):
@@ -356,16 +364,15 @@ class TeacherForcing(Model):
             # concat decoder start token id to target sentence ids
             output_start_id = np.ones((output_ids.shape[0], 1)) * decoder_start_token_id
             output_ids = np.concatenate((output_start_id, output_ids), axis=-1)
-            # generate outputs and logits
-            logits = self.model_inference(inputs, output_ids)
-            logits = logits[:, :-1, :]
+            # generate outputs and logits (slice off the last position on-device)
+            logits = self.model_inference(inputs, output_ids, slice(None, -1))
         else:
             # encode batched inputs by padding on the left side
             inputs = self.get_inputs(X, padding_side='left')
-            # generate outputs and logits
-            logits = self.model_inference(inputs, output_ids)
-            # extract only logits corresponding to target sentence ids
-            logits = logits[:, -output_ids.shape[1]-1:-1, :]
+            # keep only the logits predicting the target sentence ids; slice on-device
+            # before the float64 host transfer to avoid moving the whole prompt.
+            logits = self.model_inference(inputs, output_ids,
+                                          slice(-output_ids.shape[1] - 1, -1))
         return logits
 
     def save(self, out_file):
